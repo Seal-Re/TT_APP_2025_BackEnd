@@ -1,65 +1,94 @@
 package com.seal.nettyserver.handler;
 
-import io.netty.channel.Channel;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
+import io.netty.channel.group.ChannelGroup;
+import io.netty.channel.group.DefaultChannelGroup;
 import io.netty.handler.codec.http.websocketx.TextWebSocketFrame;
+import io.netty.handler.codec.http.websocketx.WebSocketFrame;
+import io.netty.util.AttributeKey;
+import io.netty.util.concurrent.GlobalEventExecutor;
 
-import static com.seal.nettyserver.handler.WebSocketAuthHandler.USER_ID_KEY;
-import static com.seal.nettyserver.handler.WebSocketAuthHandler.authenticatedChannels;
+public class WebSocketChatHandler extends SimpleChannelInboundHandler<WebSocketFrame> {
 
-public class WebSocketChatHandler extends SimpleChannelInboundHandler<TextWebSocketFrame> {
+    public static final AttributeKey<String> USER_ID_KEY = AttributeKey.valueOf("userId");
+    public static final ChannelGroup authenticatedChannels = new DefaultChannelGroup(GlobalEventExecutor.INSTANCE);
+    public static final ObjectMapper objectMapper = new ObjectMapper();
 
-    /**
-     * 当接收到入站消息时被调用。
-     * @param ctx ChannelHandlerContext，Handler Context。
-     * @param msg TextWebSocketFrame，Txt message from 客户端。
-     */
     @Override
-    protected void channelRead0(ChannelHandlerContext ctx, TextWebSocketFrame msg) throws Exception {
-        // Get sender id
-        String senderId = ctx.channel().attr(USER_ID_KEY).get();
-        // Get message
-        String message = msg.text();
+    public void channelActive(ChannelHandlerContext ctx) throws Exception {
+        System.out.println("WebSocket连接已激活，用户 " + ctx.channel().id() + " 加入聊天室。");
+        authenticatedChannels.add(ctx.channel());
+    }
 
-        System.out.println("用户 " + senderId + " 发送了消息: " + message);
+    @Override
+    protected void channelRead0(ChannelHandlerContext ctx, WebSocketFrame msg) throws Exception {
+        if (msg instanceof TextWebSocketFrame) {
+            String requestText = ((TextWebSocketFrame) msg).text();
+            System.out.println("收到消息: " + requestText);
 
-        // 构建要广播的消息
-        TextWebSocketFrame response = new TextWebSocketFrame("用户 " + senderId + ": " + message);
+            ctx.channel().writeAndFlush(new TextWebSocketFrame("服务器收到: " + requestText));
 
-        // 遍历所有已认证的Channel，将消息广播出去
-        for (Channel channel : authenticatedChannels) {
-            // 不将消息发给自己
-            if (channel != ctx.channel()) {
-                channel.writeAndFlush(response.retain()); // 注意：需要 retain() 以防消息被提前释放
+            try {
+
+                // 使用 Jackson 的 ObjectMapper 将 JSON 字符串解析为 JsonNode
+                JsonNode rootNode = objectMapper.readTree(requestText);
+
+                // 从 JsonNode 中提取字段
+                String type = rootNode.get("type").asText();
+                String toUserId = rootNode.get("to").asText();
+                String messageContent = rootNode.get("message").asText();
+
+                String fromUserId = ctx.channel().attr(WebSocketAuthHandler.USER_ID_KEY).get();
+
+                System.out.println("消息类型: " + type);
+                System.out.println("来自用户: " + fromUserId);
+                System.out.println("目标用户: " + toUserId);
+                System.out.println("消息内容: " + messageContent);
+
+                // 在此处实现点对点消息的发送逻辑
+
+                authenticatedChannels.forEach(channel -> {
+                    try {
+                        // 创建一个 JSON 对象
+                        ObjectNode jsonResponse = objectMapper.createObjectNode();
+
+                        // 将消息内容填充到 JSON 对象中
+                        jsonResponse.put("type", type);
+                        jsonResponse.put("from", fromUserId);
+                        jsonResponse.put("to", toUserId);
+                        jsonResponse.put("message", messageContent);
+
+                        // 将 JSON 对象序列化为 JSON 字符串
+                        String jsonString = objectMapper.writeValueAsString(jsonResponse);
+
+                        // 将 JSON 字符串封装在 TextWebSocketFrame 中发送
+                        channel.writeAndFlush(new TextWebSocketFrame(jsonString));
+
+                    } catch (Exception e) {
+                        System.err.println("JSON 序列化失败: " + e.getMessage());
+                    }
+                });
+
+            } catch (Exception e) {
+                System.err.println("解析 JSON 消息失败：" + e.getMessage());
+                // 可以向客户端返回一个错误提示
+                ctx.channel().writeAndFlush(new TextWebSocketFrame("错误：无效的 JSON 格式或字段缺失"));
             }
+
+
+           // authenticatedChannels.writeAndFlush(new TextWebSocketFrame("服务器广播: " + requestText));
+        } else {
+            System.out.println("不支持的帧类型: " + msg.getClass().getName());
         }
     }
 
-    /**
-     * 当连接从 ChannelGroup 中移除时，
-     */
     @Override
-    public void handlerRemoved(ChannelHandlerContext ctx) throws Exception {
-        String userId = ctx.channel().attr(USER_ID_KEY).get();
-        if (userId != null) {
-            System.out.println("用户 " + userId + " 离开了聊天室。");
-            // 广播用户下线消息
-            TextWebSocketFrame offlineMessage = new TextWebSocketFrame("用户 " + userId + " 离开了聊天室。");
-            for (Channel channel : authenticatedChannels) {
-                channel.writeAndFlush(offlineMessage.retain());
-            }
-            // 从 ChannelGroup 中移除连接
-            authenticatedChannels.remove(ctx.channel());
-        }
-    }
-
-    /**
-     * 当处理过程中发生异常时被调用。
-     */
-    @Override
-    public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
-        System.err.println("聊天处理时发生异常：" + cause.getMessage());
-        ctx.close(); // 发生异常时关闭连接
+    public void channelInactive(ChannelHandlerContext ctx) throws Exception {
+        System.out.println("用户 " + ctx.channel().attr(USER_ID_KEY).get() + " 离开了聊天室。");
+        authenticatedChannels.remove(ctx.channel());
     }
 }
