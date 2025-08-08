@@ -1,0 +1,18 @@
+spring:
+  application:
+    name: ttapp
+  profiles:
+    active: prod # 或者使用 ${app.profile}
+  cloud:
+    nacos:
+      config:
+        server-addr: ${app.nacos.server-addr}
+        file-extension: yml
+        namespace: ${app.env}
+        username: nacos
+        password: nacos
+      discovery:
+        server-addr: ${app.nacos.server-addr}
+        ip: ${app.nacos.ip}
+  config:
+    import: nacos:ttapp-base.yml # 从Nacos导入ttapp-prod.yml这个配置文件

@@ -28,6 +28,7 @@
     </scm>
     <properties>
         <java.version>17</java.version>
+
     </properties>
     <dependencies>
         <dependency>
@@ -85,5 +86,20 @@
             </plugin>
         </plugins>
     </build>
+    <profiles>
+        <profile>
+            <id>seal</id>
+            <properties>
+                <!-- spring中的profile-->
+                <app.profile>seal</app.profile>
+                <!-- nacos注册地址 -->
+                <app.nacos.server-addr>192.168.1.156:8848</app.nacos.server-addr>
+                <!-- nacos命名空间 -->
+                <app.env>seal</app.env>
+                <!-- 本地地址-->
+                <app.nacos.ip>192.168.1.156</app.nacos.ip>
+            </properties>
+        </profile>
+    </profiles>
 
 </project>
