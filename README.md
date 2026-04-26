@@ -1,40 +1,108 @@
-# 🚀 TT_APP_2025_BackEnd：实时通信引擎！
+# TT_APP_2025_BackEnd · Netty WebSocket Chat Backend
 
-## 🌟 项目简介
+> **A high-concurrency WebSocket chat backend for the TikTok (抖音) 2025 AI Competition miniapp — Netty NIO pipeline with JWT authentication at connection time.**
+>
+> 抖音 2025 AI 创变者大赛小程序后端，Netty 异步 NIO 驱动的 WebSocket 聊天室，连接建立时即完成 JWT 身份验证，Spring Boot 集成 Nacos 服务注册。
 
-欢迎来到 **TT_APP_2025_BackEnd**！这不是一个普通的后端服务，它是为**抖音 2025 AI 创变者大赛小程序**量身定制的**超高性能、低延迟的实时通信（RTC）核心引擎！**
+[English](#english) · [中文](#中文)
 
-我们大胆采用了 **Netty 框架**，脱离传统同步阻塞通信的束缚，旨在提供一个每秒可处理**数万并发连接**的聊天室基础设施。这个项目是您实现下一代社交、互动或直播应用梦想的坚实基础。
+![Spring Boot](https://img.shields.io/badge/Spring_Boot-2.x-6DB33F?logo=springboot)
+![Netty](https://img.shields.io/badge/Netty-4.x-FF0040)
+![JWT](https://img.shields.io/badge/Auth-JWT_HMAC256-000000)
+![Nacos](https://img.shields.io/badge/Service_Discovery-Nacos-1E90FF)
+![License](https://img.shields.io/badge/License-MIT-blue)
 
-## ✨ 核心架构与技术力量
+---
 
-我们相信，只有最强大的技术组合才能支撑未来的应用！
+<a id="english"></a>
 
-* **⚡️ 核心通信引擎：** **Netty** — Java 异步事件驱动网络应用框架的王者，确保了我们在高并发场景下的**极致性能和稳定性**。
-* **🛡️ 身份认证中枢：** **JWT (JSON Web Tokens)** — 采用 HMAC256 算法，在连接建立时即刻完成**军用级别的用户身份验证**，未认证用户？直接 Say Goodbye！
-* **🧩 开发框架基石：** **Spring Boot** — 快速集成、简化配置，使我们能够专注于核心业务逻辑。
-* **📐 数据处理：** **Jackson** — 高效、可靠的 JSON 序列化和反序列化工具。
+## Architecture
 
-## ⚙️ 现有功能：坚实的基础
+```mermaid
+flowchart LR
+    MiniApp["TikTok Miniapp\n(WebSocket client)"] -->|ws://host/auth?token=JWT| AuthHandler
 
-当前版本已经构建了 WebSocket 服务器基础，确保了系统的即时可用性：
+    subgraph NettyServer["Netty Pipeline"]
+        AuthHandler["WebSocketAuthHandler\n(JWT verify, attach userId)"]
+        ChatHandler["WebSocketChatHandler\n(broadcast / unicast)"]
+        AuthHandler -->|valid| ChatHandler
+        AuthHandler -->|invalid| Reject["403 close"]
+    end
 
-1.  **🚀 高性能 WebSocket 服务器：**
-    * **EchoServer** ，采用 **ChannelPipeline** 模式，保证请求处理的高效流程。
-2.  **🔒 实时安全认证：**
-    * **WebSocketAuthHandler** 在握手阶段拦截连接，**从 URI 中提取并实时验证 JWT 令牌**。只有通过认证的用户才能拥有进入聊天室的“通行证”。
-3.  **🗣️ 消息广播系统：**
-    * **WebSocketChatHandler** 维护所有在线用户的连接集合，目前已实现**闪电般的消息广播**（Send-to-All），是公告和公共消息的理想选择！
+    subgraph SpringBoot["Spring Boot (ttapp)"]
+        API["REST API"]
+        Nacos["Nacos\n(service discovery)"]
+        API --> Nacos
+    end
 
-## 🌌 迈向全功能通信平台
+    ChatHandler --> ChannelGroup["Netty ChannelGroup\n(all active sessions)"]
+```
 
-我们不会止步于此！项目的未来路线图旨在将其打造成一个全功能、企业级的通信平台：
+## Quickstart
 
-| 模块 | 雄心壮志的升级计划 |
-| :--- | :--- |
-| **消息私聊** | 实现**毫秒级延迟**的**点对点消息**功能。 |
-| **历史追溯** | 引入**消息持久化**机制，确保每条宝贵信息都能被存储，并提供强大的历史消息查询 API。 |
-| **多房间支持** | 支持**创建和管理多个独立的聊天室**，实现精细化的用户分组和隔离。 |
-| **状态感知** | 彻底实现**用户在线/离线状态管理**，并实时通知所有相关方。 |
-| **多媒体扩展** | **支持图片、文件**等多种媒体消息类型，并追踪消息的**“已读”状态**。 |
-| **安全强化** | 将硬编码的密钥替换为**安全配置**，并引入**连接频率限制与内容过滤**，打造一个绿色的通信环境。 |
+```bash
+# 1. Start Nacos (optional for local dev, disable discovery in config)
+# 2. Configure application.yml (port, nacos.server-addr)
+mvn spring-boot:run
+
+# WebSocket endpoint
+ws://localhost:PORT/ws?token=<JWT>
+```
+
+## Technical Highlights
+
+<details>
+<summary><b>Netty async NIO vs. thread-per-connection</b></summary>
+
+- **S**: Traditional servlet-based WebSocket (e.g., Spring WebSocket) allocates one thread per connection. At hundreds of concurrent chatroom users, thread context-switch overhead degrades throughput.
+- **A**: `EchoServer` bootstraps a Netty `NioEventLoopGroup` with a bossGroup (1 thread, accept) + workerGroup (N threads, I/O). Each channel is handled asynchronously; no thread blocks waiting on a socket.
+- **R**: Handles many concurrent WebSocket connections on a small thread pool; scales horizontally by increasing workerGroup threads.
+</details>
+
+<details>
+<summary><b>JWT verification in the Netty pipeline before upgrade</b></summary>
+
+- **S**: WebSocket upgrade happens over HTTP; if auth is deferred to the WebSocket layer, an unauthenticated client can already hold an open channel.
+- **A**: `WebSocketAuthHandler extends SimpleChannelInboundHandler<FullHttpRequest>` intercepts the HTTP upgrade request, extracts the JWT from the URI query param, verifies with `Algorithm.HMAC256`, and attaches the `userId` to the channel's `AttributeKey`. Invalid tokens close the channel with a 403 before the upgrade completes.
+- **R**: Zero unauthenticated WebSocket sessions; auth logic isolated to one pipeline stage.
+</details>
+
+## Repo Layout
+
+```
+nettyServer/
+└── src/main/java/com/seal/nettyserver/
+    ├── handler/
+    │   ├── WebSocketAuthHandler.java   JWT verify + userId attach
+    │   └── WebSocketChatHandler.java   message broadcast/unicast
+    ├── initializer/WebSocketInitializer.java  pipeline assembly
+    └── server/EchoServer.java          Netty bootstrap
+
+ttapp/
+└── ttapp_base/   Spring Boot REST + Nacos integration
+
+src/   Spring Boot entry (NettyDemoApplication)
+```
+
+## Roadmap
+
+- [x] Netty WebSocket server with NIO event loop
+- [x] JWT auth at HTTP upgrade (HMAC256)
+- [x] Nacos service registration
+- [ ] Room-based channel groups (multi-room support)
+- [ ] Message persistence (Redis pub/sub or MongoDB)
+- [ ] Reconnect with session resume
+
+---
+
+<a id="中文"></a>
+
+## 中文速读
+
+- **是什么**：抖音 2025 竞赛小程序 WebSocket 聊天后端，Netty NIO 事件驱动，HTTP 升级阶段即做 JWT 验证，Spring Boot + Nacos 服务注册。
+- **亮点**：`WebSocketAuthHandler` 在 WebSocket 握手前完成 JWT 校验，无效 token 403 关闭，零未认证会话；Netty bossGroup/workerGroup 分离连接接受与 I/O 处理。
+- **运行**：配置 Nacos 地址 → `mvn spring-boot:run`，客户端连接 `ws://host/ws?token=JWT`。
+
+## License
+
+MIT © [Seal-Re](https://github.com/Seal-Re)
